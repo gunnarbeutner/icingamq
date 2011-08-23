@@ -1,38 +1,24 @@
-typedef int (*imq_getpw_cb)(const char *username, char **password);
+#ifndef LIBIMQ_H
+#define LIBIMQ_H
 
-typedef struct imq_channel_s {
-	struct imq_channel_s *next;
+typedef int (*imq_authn_getpw_cb)(const char *username, char **password);
+typedef int (*imq_authz_channel_cb)(const char *username, const char *channel);
 
-	char *name;
-	void *zmqsocket;
-} imq_channel_t;
+typedef struct imq_socket_s imq_socket_t;
+typedef struct imq_listener_s imq_listener_t;
 
-typedef struct imq_socket_s {
-	int fd;
-
-	imq_channel_t *channels_head;
-
-	imq_getpw_cb get_pass_cb;
-
-	char *username;
-	char *password;
-} imq_socket_t;
-
-imq_socket_t *imq_socket(void);
+imq_socket_t *imq_connect(const char *host, unsigned short port,
+    const char *username, const char *password);
+void *imq_open_channel(imq_socket_t *socket, const char *channel,
+    const char *instance, int zmqtype);
 void imq_close(imq_socket_t *socket);
 
-int imq_set_credentials(imq_socket_t *socket, const char *username,
-    const char *password);
-int imq_set_getpw_func(imq_socket_t *socket, imq_getpw_cb getpw_cb);
+imq_listener_t *imq_listener(unsigned short port, imq_authn_getpw_cb getpw_cb,
+    imq_authz_channel_cb authz_channel_cb);
+void *imq_create_channel(imq_listener_t *listener, const char *channel,
+    const char *instance, int zmqtype);
 
-int imq_bind_tcp(imq_socket_t *socket, const char *host, unsigned short port);
-int imq_connect_tcp(imq_socket_t *socket, const char *host,
-    unsigned short port);
+int imq_device(imq_listener_t *downstream, imq_socket_t *upstream,
+    int zmqdevice);
 
-int imq_bind_unix(imq_socket_t *socket, const char *path);
-int imq_connect_unix(imq_socket_t *socket, const char *path);
-
-void imq_attach(imq_socket_t *socket, const char *channel, void *zmqsocket);
-void imq_detach(imq_socket_t *socket, void *zmqsocket);
-
-void *imq_open_channel(imq_socket_t *socket, const char *channel, int type);
+#endif /* LIBIMQ_H */
