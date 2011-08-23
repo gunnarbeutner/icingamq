@@ -1,0 +1,9 @@
+libimq
+------
+
+This library implements the IcingaMQ protocol which is layered on
+top of ZeroMQ. It supports the following functionality:
+
+-authentication and (later on) encryption
+-multiplexed ZeroMQ channels
+-channel-based authorisation
