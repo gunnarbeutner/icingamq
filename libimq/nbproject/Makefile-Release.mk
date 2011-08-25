@@ -34,7 +34,11 @@ OBJECTDIR=${CND_BUILDDIR}/${CND_CONF}/${CND_PLATFORM}
 
 # Object Files
 OBJECTFILES= \
-	${OBJECTDIR}/libimq.o
+	${OBJECTDIR}/socket.o \
+	${OBJECTDIR}/endpoint.o \
+	${OBJECTDIR}/broker.o \
+	${OBJECTDIR}/log.o \
+	${OBJECTDIR}/listener.o
 
 
 # C Compiler Flags
@@ -61,10 +65,30 @@ ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}/liblibimq.so: ${OBJECTFILES}
 	${MKDIR} -p ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}
 	${LINK.c} -shared -o ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}/liblibimq.so -fPIC ${OBJECTFILES} ${LDLIBSOPTIONS} 
 
-${OBJECTDIR}/libimq.o: libimq.c 
+${OBJECTDIR}/socket.o: socket.c 
 	${MKDIR} -p ${OBJECTDIR}
 	${RM} $@.d
-	$(COMPILE.c) -O2 -fPIC  -MMD -MP -MF $@.d -o ${OBJECTDIR}/libimq.o libimq.c
+	$(COMPILE.c) -O2 -fPIC  -MMD -MP -MF $@.d -o ${OBJECTDIR}/socket.o socket.c
+
+${OBJECTDIR}/endpoint.o: endpoint.c 
+	${MKDIR} -p ${OBJECTDIR}
+	${RM} $@.d
+	$(COMPILE.c) -O2 -fPIC  -MMD -MP -MF $@.d -o ${OBJECTDIR}/endpoint.o endpoint.c
+
+${OBJECTDIR}/broker.o: broker.c 
+	${MKDIR} -p ${OBJECTDIR}
+	${RM} $@.d
+	$(COMPILE.c) -O2 -fPIC  -MMD -MP -MF $@.d -o ${OBJECTDIR}/broker.o broker.c
+
+${OBJECTDIR}/log.o: log.c 
+	${MKDIR} -p ${OBJECTDIR}
+	${RM} $@.d
+	$(COMPILE.c) -O2 -fPIC  -MMD -MP -MF $@.d -o ${OBJECTDIR}/log.o log.c
+
+${OBJECTDIR}/listener.o: listener.c 
+	${MKDIR} -p ${OBJECTDIR}
+	${RM} $@.d
+	$(COMPILE.c) -O2 -fPIC  -MMD -MP -MF $@.d -o ${OBJECTDIR}/listener.o listener.c
 
 # Subprojects
 .build-subprojects:

@@ -4,8 +4,7 @@
     <logicalFolder name="HeaderFiles"
                    displayName="Header Files"
                    projectFiles="true">
-      <itemPath>libimq.h</itemPath>
-      <itemPath>libimq_impl.h</itemPath>
+      <itemPath>imq.h</itemPath>
     </logicalFolder>
     <logicalFolder name="ResourceFiles"
                    displayName="Resource Files"
@@ -14,7 +13,11 @@
     <logicalFolder name="SourceFiles"
                    displayName="Source Files"
                    projectFiles="true">
-      <itemPath>libimq.c</itemPath>
+      <itemPath>broker.c</itemPath>
+      <itemPath>endpoint.c</itemPath>
+      <itemPath>listener.c</itemPath>
+      <itemPath>log.c</itemPath>
+      <itemPath>socket.c</itemPath>
     </logicalFolder>
     <logicalFolder name="TestFiles"
                    displayName="Test Files"
@@ -27,6 +30,7 @@
                    kind="IMPORTANT_FILES_FOLDER">
       <itemPath>Makefile</itemPath>
     </logicalFolder>
+    <itemPath>README.messages</itemPath>
   </logicalFolder>
   <projectmakefile>Makefile</projectmakefile>
   <confs>
@@ -39,6 +43,7 @@
         <linkerTool>
           <linkerLibItems>
             <linkerLibStdlibItem>PosixThreads</linkerLibStdlibItem>
+            <linkerLibLibItem>zmq</linkerLibLibItem>
           </linkerLibItems>
         </linkerTool>
       </compileType>

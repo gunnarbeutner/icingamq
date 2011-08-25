@@ -1,0 +1,37 @@
+IMQ_MSG_RESULT
+==============
+
+IMQ_MSG_AUTH_CHALLENGE
+======================
+
+IMQ_MSG_AUTH_RESPONSE
+=====================
+
+IMQ_OPEN_CIRCUIT
+================
+
+channel: string
+instance: string
+circuitid: integer
+
+IMQ_CLOSE_CIRCUIT
+=================
+
+circuitid: integer
+
+IMQ_DATA
+========
+
+circuitid: integer
+data: binary
+
+IMQ_ADV_USER
+============
+
+username: string
+password (hash): string
+
+IMQ_ADV_USER_COMMIT
+===================
+
+(no fields)
