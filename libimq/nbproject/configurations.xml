@@ -4,7 +4,9 @@
     <logicalFolder name="HeaderFiles"
                    displayName="Header Files"
                    projectFiles="true">
+      <itemPath>fifo.h</itemPath>
       <itemPath>imq.h</itemPath>
+      <itemPath>imqmessage.h</itemPath>
     </logicalFolder>
     <logicalFolder name="ResourceFiles"
                    displayName="Resource Files"
@@ -14,9 +16,12 @@
                    displayName="Source Files"
                    projectFiles="true">
       <itemPath>broker.c</itemPath>
+      <itemPath>circuit.c</itemPath>
       <itemPath>endpoint.c</itemPath>
+      <itemPath>fifo.c</itemPath>
       <itemPath>listener.c</itemPath>
       <itemPath>log.c</itemPath>
+      <itemPath>message.c</itemPath>
       <itemPath>socket.c</itemPath>
     </logicalFolder>
     <logicalFolder name="TestFiles"

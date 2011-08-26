@@ -152,3 +152,52 @@ int imq_bind_unix_endpoint(imq_endpoint_t *endpoint) {
 
 	return 0;
 }
+
+int imq_attach_circuit(imq_endpoint_t *endpoint, imq_circuit_t *circuit) {
+	int i;
+	imq_circuit_t **new_circuits;
+
+	for (i = 0; i < endpoint->circuitcount; i++) {
+		if (endpoint->circuits[i] == NULL) {
+			endpoint->circuits[i] = circuit;
+			return 0;
+		}
+	}
+
+	new_circuits = (imq_circuit_t **)realloc(endpoint->circuits,
+	    sizeof (imq_circuit_t *) * (endpoint->circuitcount + 1));
+
+	if (new_circuits == NULL)
+		return -1;
+
+	endpoint->circuits = new_circuits;
+	endpoint->circuitcount++;
+
+	endpoint->circuits[endpoint->circuitcount - 1] = circuit;
+
+	return 0;
+}
+
+int imq_detach_circuit(imq_endpoint_t *endpoint, imq_circuit_t *circuit) {
+	int i;
+
+	for (i = 0; i < endpoint->circuitcount; i++) {
+		if (endpoint->circuits[i] == circuit)
+			endpoint->circuits[i] = NULL;
+	}
+
+	return 0;
+}
+
+int imq_close_all_circuits(imq_endpoint_t *endpoint) {
+	int i;
+
+	for (i = 0; i < endpoint->circuitcount; i++)
+		imq_free_circuit(endpoint->circuits[i]);
+
+	free(endpoint->circuits);
+	endpoint->circuits = NULL;
+	endpoint->circuitcount = 0;
+
+	return 0;
+}

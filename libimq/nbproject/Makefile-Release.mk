@@ -36,8 +36,11 @@ OBJECTDIR=${CND_BUILDDIR}/${CND_CONF}/${CND_PLATFORM}
 OBJECTFILES= \
 	${OBJECTDIR}/socket.o \
 	${OBJECTDIR}/endpoint.o \
+	${OBJECTDIR}/circuit.o \
 	${OBJECTDIR}/broker.o \
 	${OBJECTDIR}/log.o \
+	${OBJECTDIR}/message.o \
+	${OBJECTDIR}/fifo.o \
 	${OBJECTDIR}/listener.o
 
 
@@ -75,6 +78,11 @@ ${OBJECTDIR}/endpoint.o: endpoint.c
 	${RM} $@.d
 	$(COMPILE.c) -O2 -fPIC  -MMD -MP -MF $@.d -o ${OBJECTDIR}/endpoint.o endpoint.c
 
+${OBJECTDIR}/circuit.o: circuit.c 
+	${MKDIR} -p ${OBJECTDIR}
+	${RM} $@.d
+	$(COMPILE.c) -O2 -fPIC  -MMD -MP -MF $@.d -o ${OBJECTDIR}/circuit.o circuit.c
+
 ${OBJECTDIR}/broker.o: broker.c 
 	${MKDIR} -p ${OBJECTDIR}
 	${RM} $@.d
@@ -84,6 +92,16 @@ ${OBJECTDIR}/log.o: log.c
 	${MKDIR} -p ${OBJECTDIR}
 	${RM} $@.d
 	$(COMPILE.c) -O2 -fPIC  -MMD -MP -MF $@.d -o ${OBJECTDIR}/log.o log.c
+
+${OBJECTDIR}/message.o: message.c 
+	${MKDIR} -p ${OBJECTDIR}
+	${RM} $@.d
+	$(COMPILE.c) -O2 -fPIC  -MMD -MP -MF $@.d -o ${OBJECTDIR}/message.o message.c
+
+${OBJECTDIR}/fifo.o: fifo.c 
+	${MKDIR} -p ${OBJECTDIR}
+	${RM} $@.d
+	$(COMPILE.c) -O2 -fPIC  -MMD -MP -MF $@.d -o ${OBJECTDIR}/fifo.o fifo.c
 
 ${OBJECTDIR}/listener.o: listener.c 
 	${MKDIR} -p ${OBJECTDIR}

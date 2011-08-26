@@ -12,7 +12,7 @@ IMQ_OPEN_CIRCUIT
 
 channel: string
 instance: string
-circuitid: integer
+circuitid: integer (client decides which circuit id to use; server socket never allocates ids)
 
 IMQ_CLOSE_CIRCUIT
 =================
@@ -23,6 +23,7 @@ IMQ_DATA
 ========
 
 circuitid: integer
+len: integer
 data: binary
 
 IMQ_ADV_USER

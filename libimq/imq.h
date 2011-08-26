@@ -1,8 +1,16 @@
 #ifndef LIBIMQ_H
 #define LIBIMQ_H
 
+#include "fifo.h"
+#include "imqmessage.h"
+
 typedef int (*imq_authn_getpw_cb)(const char *username, char **password);
 typedef int (*imq_authz_channel_cb)(const char *username, const char *channel);
+
+typedef struct imq_circuit_s {
+	int id;
+	int fd;
+} imq_circuit_t;
 
 typedef struct imq_endpoint_s {
 	char *channel;
@@ -12,6 +20,9 @@ typedef struct imq_endpoint_s {
 
 	int listenerfd;
 	void *zmqsocket;
+
+	imq_circuit_t **circuits;
+	int circuitcount;
 } imq_endpoint_t;
 
 typedef struct imq_listener_s {
@@ -32,24 +43,13 @@ typedef enum imq_socket_type_e {
 	IMQ_CLIENT
 } imq_socket_type_t;
 
-typedef struct imq_queue_s {
-	void *data;
-	size_t size;
-} imq_queue_t;
-
-typedef struct imq_circuit_s {
-	int id;
-	int fd;
-	/*imq_endpoint_t *endpoint;*/
-} imq_circuit_t;
-
 typedef struct imq_socket_s {
 	int closed;
+	time_t last_reconnect;
 
 	int fd;
 
 	imq_socket_type_t type;
-	imq_listener_t *listener;
 
 	char *host;
 	unsigned short port;
@@ -59,31 +59,20 @@ typedef struct imq_socket_s {
 	imq_endpoint_t **endpoints;
 	int endpointcount;
 
-	imq_circuit_t **circuits;
-	int circuitcount;
-
-	imq_queue_t sendq;
-	imq_queue_t recvq;
+	imq_fifo_t *sendq;
+	imq_fifo_t *recvq;
 
 	int has_iothread;
 	pthread_t iothread;
 	pthread_mutex_t mutex;
 } imq_socket_t;
 
-typedef enum imq_message_type_e {
-	IMQ_MSG_RESULT,
-	IMQ_MSG_AUTH_CHALLENGE,
-	IMQ_MSG_AUTH_RESPONSE,
-	IMQ_MSG_OPEN_CIRCUIT,
-	IMQ_MSG_CLOSE_CIRCUIT,
-	IMQ_MSG_DATA,
-	IMQ_ADV_USER,
-	IMQ_ADV_USER_COMMIT,
-	IMQ_ADV_CHANNEL
-} imq_message_type_t;
-
 /* logging functions */
 void imq_log(const char *format, ...);
+
+/* low-level circuit functions */
+imq_circuit_t *imq_alloc_circuit(int fd);
+void imq_free_circuit(imq_circuit_t *circuit);
 
 /* low-level endpoint functions */
 imq_endpoint_t *imq_alloc_endpoint(const char *channel, const char *instance);
@@ -91,6 +80,8 @@ void imq_free_endpoint(imq_endpoint_t *endpoint);
 int imq_bind_zmq_endpoint(imq_endpoint_t *endpoint, void *zmqcontext,
     int zmqtype);
 int imq_bind_unix_endpoint(imq_endpoint_t *endpoint);
+int imq_attach_circuit(imq_endpoint_t *endpoint, imq_circuit_t *circuit);
+int imq_detach_circuit(imq_endpoint_t *endpoint, imq_circuit_t *circuit);
 
 /* socket functions */
 imq_socket_t *imq_connect(const char *host, unsigned short port,
