@@ -13,6 +13,9 @@
 
 #define RECONNECT_INTERVAL 5
 
+static int imq_socket_attach_endpoint(imq_socket_t *socket,
+    imq_endpoint_t *endpoint);
+
 static imq_socket_t *imq_socket(int fd, imq_socket_type_t type) {
 	imq_socket_t *socket;
 
@@ -87,7 +90,59 @@ static int imq_reconnect_socket(imq_socket_t *sock) {
 
 static void imq_process_open_circuit(imq_socket_t *sock,
     imq_msg_open_circuit_t *open_circuit) {
-	/* TODO: find matching endpoint and connect */
+	imq_endpoint_t *endpoint, *clone_endpoint;
+	imq_circuit_t *circuit;
+	imq_msg_t rejectmsg;
+
+	rejectmsg.type = IMQ_MSG_CLOSE_CIRCUIT;
+	rejectmsg.content.close_circuit.circuitid = open_circuit->circuitid;
+
+	endpoint = sock->authz_channel_cb(sock, open_circuit->channel,
+	    open_circuit->instance);
+
+	if (endpoint == NULL) {	
+		imq_send_message(sock->sendq, &rejectmsg);
+
+		return;
+	}
+
+	assert(strcmp(endpoint->channel, open_circuit->channel) == 0);
+	assert(open_circuit->instance == NULL ||
+	    strcmp(endpoint->instance, open_circuit->instance) == 0);
+
+	clone_endpoint = imq_shallow_clone_endpoint(endpoint);
+
+	if (clone_endpoint == NULL) {
+		imq_send_message(sock->sendq, &rejectmsg);
+
+		return;
+	}
+
+	if (imq_socket_attach_endpoint(sock, clone_endpoint) < 0) {
+		imq_send_message(sock->sendq, &rejectmsg);
+
+		return;
+	}
+
+	circuit = imq_alloc_circuit(open_circuit->circuitid, -1);
+
+	if (circuit == NULL) {
+		imq_send_message(sock->sendq, &rejectmsg);
+
+		return;
+	}
+
+	if (imq_connect_circuit(circuit, clone_endpoint) < 0) {
+		imq_send_message(sock->sendq, &rejectmsg);
+
+		return;
+	}
+
+	if (imq_attach_circuit(clone_endpoint, circuit) < 0) {
+		imq_send_message(sock->sendq, &rejectmsg);
+
+		return;
+	}
 }
 
 static void imq_process_close_circuit(imq_socket_t *sock,
@@ -205,12 +260,19 @@ static void *imq_socket_io_thread(void *psocket) {
 	while (1) {
 		pthread_mutex_lock(&(sock->mutex));
 
-		if (sock->type == IMQ_CLIENT && sock->fd == -1) {
-			time(&now);
+		if (sock->fd == -1) {
+			if (sock->type == IMQ_CLIENT) {
+				time(&now);
 
-			if (now - sock->last_reconnect > RECONNECT_INTERVAL) {
-				(void) imq_reconnect_socket(sock);
-				time(&(sock->last_reconnect));
+				if (now - sock->last_reconnect > RECONNECT_INTERVAL) {
+					(void) imq_reconnect_socket(sock);
+					time(&(sock->last_reconnect));
+				}
+			} else {
+				if (sock->disowned)
+					imq_close_socket(sock);
+
+				break;
 			}
 		}
 
@@ -310,7 +372,7 @@ static void *imq_socket_io_thread(void *psocket) {
 					continue;
 				}
 
-				circuit = imq_alloc_circuit(fd);
+				circuit = imq_alloc_circuit(-1, fd);
 
 				if (circuit == NULL) {
 					close(fd);
@@ -410,15 +472,16 @@ imq_socket_t *imq_server_socket(int fd, imq_listener_t *listener) {
 	if (socket == NULL)
 		return NULL;
 
-	/* TODO: clone the listener's endpoints */
+	socket->authn_getpw_cb = listener->authn_getpw_cb;
+	socket->authz_channel_cb = listener->authz_channel_cb;
 
 	if (imq_start_socket_io(socket) < 0) {
-		imq_close(socket);
+		imq_close_socket(socket);
 
 		return NULL;
 	}
 
-	return NULL;
+	return socket;
 }
 
 imq_socket_t *imq_connect(const char *host, unsigned short port,
@@ -433,7 +496,7 @@ imq_socket_t *imq_connect(const char *host, unsigned short port,
 	socket->host = strdup(host);
 
 	if (socket->host == NULL) {
-		imq_close(socket);
+		imq_close_socket(socket);
 		return NULL;
 	}
 
@@ -442,19 +505,19 @@ imq_socket_t *imq_connect(const char *host, unsigned short port,
 	socket->username = strdup(username);
 
 	if (socket->username == NULL) {
-		imq_close(socket);
+		imq_close_socket(socket);
 		return NULL;
 	}
 
 	socket->password = strdup(password);
 
 	if (socket->password == NULL) {
-		imq_close(socket);
+		imq_close_socket(socket);
 		return NULL;
 	}
 
 	if (imq_start_socket_io(socket) < 0) {
-		imq_close(socket);
+		imq_close_socket(socket);
 
 		return NULL;
 	}
@@ -462,14 +525,19 @@ imq_socket_t *imq_connect(const char *host, unsigned short port,
 	return socket;
 }
 
-void imq_close(imq_socket_t *socket) {
+void imq_disown_socket(imq_socket_t *socket) {
+	pthread_mutex_lock(&(socket->mutex));
+	socket->disowned = 1;
+	pthread_mutex_unlock(&(socket->mutex));
+}
+
+void imq_close_socket(imq_socket_t *socket) {
 	int i;
 
 	if (socket->fd != -1)
 		close(socket->fd);
 
 	pthread_mutex_lock(&(socket->mutex));
-	socket->closed = 1;
 	if (socket->has_iothread)
 		pthread_cancel(socket->iothread);
 	pthread_mutex_unlock(&(socket->mutex));
@@ -489,18 +557,16 @@ void imq_close(imq_socket_t *socket) {
 	free(socket);
 }
 
-int imq_socket_attach_endpoint(imq_socket_t *socket, imq_endpoint_t *endpoint) {
+static int imq_socket_attach_endpoint(imq_socket_t *socket,
+    imq_endpoint_t *endpoint) {
 	imq_endpoint_t **new_endpoints;
 
-	assert(endpoint->listenerfd != -1);
-
-	pthread_mutex_lock(&(socket->mutex));
+	assert(endpoint->path != NULL);
 
 	new_endpoints = (imq_endpoint_t **)realloc(socket->endpoints,
 	    sizeof (imq_endpoint_t *) * (socket->endpointcount + 1));
 
 	if (new_endpoints == NULL) {
-		pthread_mutex_unlock(&(socket->mutex));
 		return -1;
 	}
 
@@ -508,8 +574,6 @@ int imq_socket_attach_endpoint(imq_socket_t *socket, imq_endpoint_t *endpoint) {
 	socket->endpoints = new_endpoints;
 
 	socket->endpoints[socket->endpointcount - 1] = endpoint;
-
-	pthread_mutex_unlock(&(socket->mutex));
 
 	return 0;
 }
@@ -524,9 +588,11 @@ void *imq_open_zmq(imq_socket_t *socket, const char *channel,
 	assert(socket != NULL);
 	assert(channel != NULL);
 
+	pthread_mutex_lock(&(socket->mutex));
 	endpoint = imq_alloc_endpoint(channel, instance);
 	imq_bind_unix_endpoint(endpoint);
 	imq_socket_attach_endpoint(socket, endpoint);
+	pthread_mutex_unlock(&(socket->mutex));
 
 	zmqsocket = zmq_socket(zmqcontext, zmqtype);
 

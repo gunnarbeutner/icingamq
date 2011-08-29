@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <zmq.h>
+#include <pthread.h>
 #include "imq.h"
 
 imq_endpoint_t *imq_alloc_endpoint(const char *channel, const char *instance) {
@@ -80,7 +81,7 @@ int imq_bind_zmq_endpoint(imq_endpoint_t *endpoint, void *zmqcontext,
 	if (sock == NULL)
 		return -1;
 
-	if (asprintf(sock_addr, "ipc://%s", template) < 0) {
+	if (asprintf(&sock_addr, "ipc://%s", template) < 0) {
 		zmq_close(sock);
 		return -1;
 	}
@@ -200,4 +201,48 @@ int imq_close_all_circuits(imq_endpoint_t *endpoint) {
 	endpoint->circuitcount = 0;
 
 	return 0;
+}
+
+imq_endpoint_t *imq_shallow_clone_endpoint(imq_endpoint_t *endpoint) {
+	imq_endpoint_t *clone_endpoint;
+
+	clone_endpoint = (imq_endpoint_t *)malloc(sizeof (*clone_endpoint));
+
+	if (clone_endpoint == NULL)
+		return NULL;
+
+	memset(clone_endpoint, 0, sizeof (*clone_endpoint));
+
+	clone_endpoint->channel = strdup(endpoint->channel);
+
+	if (clone_endpoint->channel == NULL) {
+		free(clone_endpoint);
+
+		return NULL;
+	}
+
+	if (endpoint->instance != NULL) {
+		clone_endpoint->instance = strdup(endpoint->instance);
+
+		if (clone_endpoint->instance == NULL) {
+			free(clone_endpoint->channel);
+			free(clone_endpoint);
+
+			return NULL;
+		}
+	}
+
+	clone_endpoint->path = strdup(endpoint->path);
+
+	if (clone_endpoint->path == NULL) {
+		free(clone_endpoint->instance);
+		free(clone_endpoint->channel);
+		free(clone_endpoint);
+
+		return NULL;
+	}
+
+	clone_endpoint->listenerfd = -1;
+
+	return clone_endpoint;
 }
