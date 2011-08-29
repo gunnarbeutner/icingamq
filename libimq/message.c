@@ -304,4 +304,6 @@ void imq_free_message(imq_msg_t *message) {
 	default:
 		break;
 	}
+
+	free(message);
 }

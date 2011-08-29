@@ -44,6 +44,8 @@ imq_endpoint_t *imq_alloc_endpoint(const char *channel, const char *instance) {
 }
 
 void imq_free_endpoint(imq_endpoint_t *endpoint) {
+	int i;
+
 	if (endpoint == NULL)
 		return;
 
@@ -60,6 +62,12 @@ void imq_free_endpoint(imq_endpoint_t *endpoint) {
 		(void) unlink(endpoint->path);
 		free(endpoint->path);
 	}
+
+	for (i = 0; i < endpoint->circuitcount; i++) {
+		imq_free_circuit(endpoint->circuits[i]);
+	}
+
+	free(endpoint->circuits);
 
 	free(endpoint);
 }

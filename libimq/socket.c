@@ -546,6 +546,8 @@ void imq_close_socket(imq_socket_t *socket) {
 		imq_free_endpoint(socket->endpoints[i]);
 	}
 
+	free(socket->endpoints);
+
 	pthread_mutex_destroy(&(socket->mutex));
 
 	imq_free_fifo(socket->recvq);
