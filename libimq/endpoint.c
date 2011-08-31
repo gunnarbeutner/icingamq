@@ -109,6 +109,7 @@ int imq_bind_zmq_endpoint(imq_endpoint_t *endpoint, void *zmqcontext,
 	}
 
 	endpoint->zmqsocket = sock;
+	endpoint->zmqtype = zmqtype;
 
 	return 0;
 }
@@ -251,6 +252,7 @@ imq_endpoint_t *imq_shallow_clone_endpoint(imq_endpoint_t *endpoint) {
 	}
 
 	clone_endpoint->listenerfd = -1;
+	clone_endpoint->zmqtype = endpoint->zmqtype;
 
 	return clone_endpoint;
 }

@@ -17,6 +17,7 @@ typedef struct imq_endpoint_s {
 
 	int listenerfd;
 	void *zmqsocket;
+	int zmqtype;
 
 	imq_circuit_t **circuits;
 	int circuitcount;
@@ -26,19 +27,22 @@ typedef struct imq_endpoint_s {
 
 struct imq_socket_s;
 
-typedef int (*imq_authn_getpw_cb)(const char *username, char **password);
-typedef imq_endpoint_t *(*imq_authz_channel_cb)(struct imq_socket_s *socket,
-    const char *channel, const char *instance);
+typedef int (*imq_authn_checkpw_cb)(const char *username, const char *password);
+typedef int (*imq_authz_endpoint_cb)(struct imq_socket_s *socket,
+    imq_endpoint_t *endpoint);
 
 typedef struct imq_listener_s {
 	int fd;
 
-	imq_authn_getpw_cb authn_getpw_cb;
-	imq_authz_channel_cb authz_channel_cb;
+	imq_authn_checkpw_cb authn_checkpw_cb;
+	imq_authz_endpoint_cb authz_endpoint_cb;
 
 	int has_iothread;
 	pthread_t iothread;
 	pthread_mutex_t mutex;
+
+	imq_endpoint_t **endpoints;
+	int endpointcount;
 } imq_listener_t;
 
 typedef enum imq_socket_type_e {
@@ -48,13 +52,12 @@ typedef enum imq_socket_type_e {
 
 typedef struct imq_socket_s {
 	time_t last_reconnect;
+	time_t last_announcement;
 
 	int fd;
+	imq_listener_t *listener;
 
 	imq_socket_type_t type;
-
-	imq_authn_getpw_cb authn_getpw_cb;
-	imq_authz_channel_cb authz_channel_cb;
 
 	char *host;
 	unsigned short port;
@@ -72,6 +75,7 @@ typedef struct imq_socket_s {
 	pthread_mutex_t mutex;
 
 	int disowned;
+	int shutdown;
 } imq_socket_t;
 
 /* logging functions */
@@ -100,11 +104,18 @@ void *imq_open_zmq(imq_socket_t *socket, const char *channel,
 void imq_disown_socket(imq_socket_t *socket);
 void imq_close_socket(imq_socket_t *socket);
 
-/* listener functions */
-imq_listener_t *imq_listener(unsigned short port,
-    imq_authn_getpw_cb authn_getpw_cb, imq_authz_channel_cb authz_channel_cb);
+/* low-level listener functions */
 int imq_listener_attach_endpoint(imq_listener_t *listener,
     imq_endpoint_t *endpoint);
+imq_endpoint_t *imq_listener_find_endpoint(imq_listener_t *listener,
+    const char *channel, const char *instance);
+
+/* listener functions */
+imq_listener_t *imq_listener(unsigned short port,
+    imq_authn_checkpw_cb authn_checkpw_cb,
+    imq_authz_endpoint_cb authz_endpoint_cb);
+void *imq_listener_create_zmq_endpoint(imq_listener_t *listener,
+    const char *channel, const char *instance, void *zmqcontext, int zmqtype);
 void imq_close_listener(imq_listener_t *listener);
 
 /* broker functions */

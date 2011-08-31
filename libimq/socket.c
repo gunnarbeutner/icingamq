@@ -12,6 +12,9 @@
 #include "imq.h"
 
 #define RECONNECT_INTERVAL 5
+#define ANNOUNCEMENT_INTERVAL 5
+#define MAX_RECVQ_SIZE (128*1024)
+#define MAX_FAILED_AUTHS 5
 
 static int imq_socket_attach_endpoint(imq_socket_t *socket,
     imq_endpoint_t *endpoint);
@@ -41,6 +44,7 @@ static int imq_reconnect_socket(imq_socket_t *sock) {
 	struct hostent *hent;
 	struct sockaddr_in sin;
 	int fd, i;
+	imq_msg_t msg;
 
 	assert(sock->host != NULL);
 
@@ -83,9 +87,61 @@ static int imq_reconnect_socket(imq_socket_t *sock) {
 
 	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
 
+	msg.type = IMQ_MSG_AUTH;
+	msg.content.auth.username = sock->username;
+	msg.content.auth.password = sock->password;
+
+	if (imq_send_message(sock->sendq, &msg) < 0) {
+		close(fd);
+		return -1;
+	}
+
 	sock->fd = fd;
 
 	return 0;
+}
+
+static void imq_send_announcements(imq_socket_t *sock) {
+	int i;
+	imq_listener_t *listener;
+	imq_endpoint_t *endpoint;
+	imq_msg_t msg;
+
+	if (sock->type == IMQ_SERVER) {
+		listener = sock->listener;
+
+		for (i = 0; i < listener->endpointcount; i++) {
+			endpoint = listener->endpoints[i];
+
+			if (listener->authz_endpoint_cb != NULL &&
+			    listener->authz_endpoint_cb(sock, endpoint) < 0)
+				continue;
+
+			msg.type = IMQ_MSG_ADV_ENDPOINT;
+			msg.content.adv_endpoint.channel = endpoint->channel;
+			msg.content.adv_endpoint.instance = endpoint->instance;
+			msg.content.adv_endpoint.zmqtype = endpoint->zmqtype;
+			imq_send_message(sock->sendq, &msg);
+		}
+	}
+}
+
+static void imq_process_auth(imq_socket_t *sock,
+    imq_msg_auth_t *auth) {
+	assert(sock->listener != NULL);
+
+	free(sock->username);
+	sock->username = NULL;
+
+	if (sock->listener->authn_checkpw_cb != NULL &&
+	    sock->listener->authn_checkpw_cb(auth->username, auth->password) <
+	    0) {
+		sock->shutdown = 1;
+		return;
+	}
+
+	if (auth->username != NULL)
+		sock->username = strdup(auth->username);
 }
 
 static void imq_process_open_circuit(imq_socket_t *sock,
@@ -97,8 +153,10 @@ static void imq_process_open_circuit(imq_socket_t *sock,
 	rejectmsg.type = IMQ_MSG_CLOSE_CIRCUIT;
 	rejectmsg.content.close_circuit.circuitid = open_circuit->circuitid;
 
-	endpoint = sock->authz_channel_cb(sock, open_circuit->channel,
-	    open_circuit->instance);
+	assert(sock->listener != NULL);
+
+	endpoint = imq_listener_find_endpoint(sock->listener,
+	    open_circuit->channel, open_circuit->instance);
 
 	if (endpoint == NULL) {	
 		imq_send_message(sock->sendq, &rejectmsg);
@@ -106,9 +164,12 @@ static void imq_process_open_circuit(imq_socket_t *sock,
 		return;
 	}
 
-	assert(strcmp(endpoint->channel, open_circuit->channel) == 0);
-	assert(open_circuit->instance == NULL ||
-	    strcmp(endpoint->instance, open_circuit->instance) == 0);
+	if (sock->listener->authz_endpoint_cb != NULL &&
+	    sock->listener->authz_endpoint_cb(sock, endpoint) < 0) {
+		imq_send_message(sock->sendq, &rejectmsg);
+
+		return;
+	}
 
 	clone_endpoint = imq_shallow_clone_endpoint(endpoint);
 
@@ -156,6 +217,9 @@ static void imq_process_close_circuit(imq_socket_t *sock,
 
 		for (k = 0; k < endpoint->circuitcount; k++) {
 			circuit = endpoint->circuits[k];
+
+			if (circuit == NULL)
+				continue;
 
 			if (circuit->id != close_circuit->circuitid)
 				continue;
@@ -221,7 +285,6 @@ static void imq_process_message(imq_socket_t *sock, imq_msg_t *msg) {
 
 	if (sock->type == IMQ_CLIENT) {
 		switch (msg->type) {
-		case IMQ_MSG_AUTH_CHALLENGE:
 		case IMQ_MSG_ADV_USER:
 		case IMQ_MSG_ADV_USER_COMMIT:
 		default:
@@ -229,7 +292,9 @@ static void imq_process_message(imq_socket_t *sock, imq_msg_t *msg) {
 		}
 	} else {
 		switch (msg->type) {
-		case IMQ_MSG_AUTH_RESPONSE:
+		case IMQ_MSG_AUTH:
+			imq_process_auth(sock, &(msg->content.auth));
+			break;
 		case IMQ_MSG_OPEN_CIRCUIT:
 			imq_process_open_circuit(sock,
 			    &(msg->content.open_circuit));
@@ -260,13 +325,20 @@ static void *imq_socket_io_thread(void *psocket) {
 	while (1) {
 		pthread_mutex_lock(&(sock->mutex));
 
+		if (sock->fd != -1 &&
+		    imq_fifo_size(sock->recvq) > MAX_RECVQ_SIZE) {
+			close(sock->fd);
+			close(sock->fd);
+		}
+
+		time(&now);
+
 		if (sock->fd == -1) {
 			if (sock->type == IMQ_CLIENT) {
-				time(&now);
 
 				if (now - sock->last_reconnect > RECONNECT_INTERVAL) {
 					(void) imq_reconnect_socket(sock);
-					time(&(sock->last_reconnect));
+					sock->last_reconnect = now;
 				}
 			} else {
 				if (sock->disowned)
@@ -274,6 +346,11 @@ static void *imq_socket_io_thread(void *psocket) {
 
 				break;
 			}
+		}
+
+		if (now - sock->last_announcement > ANNOUNCEMENT_INTERVAL) {
+			(void) imq_send_announcements(sock);
+			sock->last_announcement = now;
 		}
 
 		FD_ZERO(&readfds);
@@ -350,6 +427,12 @@ static void *imq_socket_io_thread(void *psocket) {
 					close(sock->fd);
 					sock->fd = -1;
 				}
+
+				if (sock->fd != -1 && sock->shutdown &&
+				    imq_fifo_size(sock->sendq) == 0) {
+					close(sock->fd);
+					sock->fd = -1;
+				}
 			}
 
 			if (FD_ISSET(sock->fd, &exceptfds)) {
@@ -401,6 +484,9 @@ static void *imq_socket_io_thread(void *psocket) {
 
 			for (k = 0; k < endpoint->circuitcount; k++) {
 				circuit = endpoint->circuits[k];
+
+				if (circuit == NULL)
+					continue;
 
 				if (FD_ISSET(circuit->fd, &readfds)) {
 					rc = read(circuit->fd, buffer,
@@ -472,8 +558,7 @@ imq_socket_t *imq_server_socket(int fd, imq_listener_t *listener) {
 	if (socket == NULL)
 		return NULL;
 
-	socket->authn_getpw_cb = listener->authn_getpw_cb;
-	socket->authz_channel_cb = listener->authz_channel_cb;
+	socket->listener = listener;
 
 	if (imq_start_socket_io(socket) < 0) {
 		imq_close_socket(socket);

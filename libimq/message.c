@@ -128,6 +128,40 @@ static int imq_msg_receive_open_circuit(imq_fifo_t *fifo,
 	return 0;
 }
 
+static int imq_msg_send_auth(imq_fifo_t *fifo,
+    const imq_msg_auth_t *msg) {
+	int rc;
+
+	rc = imq_msg_write_string(fifo, msg->username);
+
+	if (rc < 0)
+		return -1;
+
+	rc = imq_msg_write_string(fifo, msg->password);
+
+	if (rc < 0)
+		return -1;
+
+	return 0;
+}
+
+static int imq_msg_receive_auth(imq_fifo_t *fifo,
+    imq_msg_auth_t *msg) {
+	int rc;
+
+	rc = imq_msg_read_string(fifo, &(msg->username));
+
+	if (rc < 0)
+		return -1;
+
+	rc = imq_msg_read_string(fifo, &(msg->password));
+
+	if (rc < 0)
+		return -1;
+
+	return 0;
+}
+
 static int imq_msg_send_close_circuit(imq_fifo_t *fifo,
     const imq_msg_close_circuit_t *msg) {
 	int rc;
@@ -195,6 +229,50 @@ static int imq_msg_receive_data_circuit(imq_fifo_t *fifo,
 	return 0;
 }
 
+static int imq_msg_send_adv_endpoint(imq_fifo_t *fifo,
+    const imq_msg_adv_endpoint_t *msg) {
+	int rc;
+
+	rc = imq_msg_write_string(fifo, msg->channel);
+
+	if (rc < 0)
+		return -1;
+
+	rc = imq_msg_write_string(fifo, msg->instance);
+
+	if (rc < 0)
+		return -1;
+
+	rc = imq_msg_write_uint16(fifo, msg->zmqtype);
+
+	if (rc < 0)
+		return -1;
+
+	return 0;
+}
+
+static int imq_msg_receive_adv_endpoint(imq_fifo_t *fifo,
+    imq_msg_adv_endpoint_t *msg) {
+	int rc;
+
+	rc = imq_msg_read_string(fifo, &(msg->channel));
+
+	if (rc < 0)
+		return -1;
+
+	rc = imq_msg_read_string(fifo, &(msg->instance));
+
+	if (rc < 0)
+		return -1;
+
+	rc = imq_msg_read_uint16(fifo, &(msg->zmqtype));
+
+	if (rc < 0)
+		return -1;
+
+	return 0;
+}
+
 int imq_send_message(imq_fifo_t *fifo, const imq_msg_t *message) {
 	int rc;
 
@@ -204,6 +282,8 @@ int imq_send_message(imq_fifo_t *fifo, const imq_msg_t *message) {
 		return -1;
 
 	switch (message->type) {
+	case IMQ_MSG_AUTH:
+		return imq_msg_send_auth(fifo, &(message->content.auth));
 	case IMQ_MSG_OPEN_CIRCUIT:
 		return imq_msg_send_open_circuit(fifo,
 		    &(message->content.open_circuit));
@@ -213,6 +293,9 @@ int imq_send_message(imq_fifo_t *fifo, const imq_msg_t *message) {
 	case IMQ_MSG_DATA_CIRCUIT:
 		return imq_msg_send_data_circuit(fifo,
 		    &(message->content.data_circuit));
+	case IMQ_MSG_ADV_ENDPOINT:
+		return imq_msg_send_adv_endpoint(fifo,
+		    &(message->content.adv_endpoint));
 	default:
 		return -1;
 	}
@@ -252,6 +335,9 @@ imq_msg_t *imq_receive_message(imq_fifo_t *fifo) {
 	message->type = type;
 
 	switch (message->type) {
+	case IMQ_MSG_AUTH:
+		rc = imq_msg_receive_auth(clone_fifo, &(message->content.auth));
+		break;
 	case IMQ_MSG_OPEN_CIRCUIT:
 		rc = imq_msg_receive_open_circuit(clone_fifo,
 		    &(message->content.open_circuit));
@@ -263,6 +349,10 @@ imq_msg_t *imq_receive_message(imq_fifo_t *fifo) {
 	case IMQ_MSG_DATA_CIRCUIT:
 		rc = imq_msg_receive_data_circuit(clone_fifo,
 		    &(message->content.data_circuit));
+		break;
+	case IMQ_MSG_ADV_ENDPOINT:
+		rc = imq_msg_receive_adv_endpoint(clone_fifo,
+		    &(message->content.adv_endpoint));
 		break;
 	default:
 		rc = -1;
@@ -287,9 +377,10 @@ void imq_free_message(imq_msg_t *message) {
 		return;
 
 	switch (message->type) {
-	case IMQ_MSG_RESULT:
-	case IMQ_MSG_AUTH_CHALLENGE:
-	case IMQ_MSG_AUTH_RESPONSE:
+	case IMQ_MSG_AUTH:
+		free(message->content.auth.username);
+		free(message->content.auth.password);
+		break;
 	case IMQ_MSG_OPEN_CIRCUIT:
 		free(message->content.open_circuit.channel);
 		free(message->content.open_circuit.instance);
@@ -301,6 +392,10 @@ void imq_free_message(imq_msg_t *message) {
 		break;
 	case IMQ_MSG_ADV_USER:
 	case IMQ_MSG_ADV_USER_COMMIT:
+	case IMQ_MSG_ADV_ENDPOINT:
+		free(message->content.adv_endpoint.channel);
+		free(message->content.adv_endpoint.instance);
+		break;
 	default:
 		break;
 	}
