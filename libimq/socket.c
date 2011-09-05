@@ -18,6 +18,7 @@
 
 static int imq_socket_attach_endpoint(imq_socket_t *socket,
     imq_endpoint_t *endpoint);
+static void imq_close_socket_internal(imq_socket_t *socket, int from_iothread);
 
 static imq_socket_t *imq_socket(int fd, imq_socket_type_t type) {
 	imq_socket_t *socket;
@@ -342,7 +343,7 @@ static void *imq_socket_io_thread(void *psocket) {
 				}
 			} else {
 				if (sock->disowned)
-					imq_close_socket(sock);
+					imq_close_socket_internal(sock, 1);
 
 				break;
 			}
@@ -403,8 +404,8 @@ static void *imq_socket_io_thread(void *psocket) {
 		else if (rc == 0)
 			continue;
 
-		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 		pthread_mutex_lock(&(sock->mutex));
+		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 
 		if (sock->fd != -1) {
 			if (FD_ISSET(sock->fd, &readfds)) {
@@ -616,16 +617,18 @@ void imq_disown_socket(imq_socket_t *socket) {
 	pthread_mutex_unlock(&(socket->mutex));
 }
 
-void imq_close_socket(imq_socket_t *socket) {
+static void imq_close_socket_internal(imq_socket_t *socket, int from_iothread) {
 	int i;
 
 	if (socket->fd != -1)
 		close(socket->fd);
 
-	pthread_mutex_lock(&(socket->mutex));
-	if (socket->has_iothread)
+	if (socket->has_iothread) {
 		pthread_cancel(socket->iothread);
-	pthread_mutex_unlock(&(socket->mutex));
+
+		if (!from_iothread)
+			pthread_join(socket->iothread, NULL);
+	}
 
 	for (i = 0; i < socket->endpointcount; i++) {
 		imq_free_endpoint(socket->endpoints[i]);
@@ -642,6 +645,10 @@ void imq_close_socket(imq_socket_t *socket) {
 	free(socket->username);
 	free(socket->password);
 	free(socket);
+}
+
+void imq_close_socket(imq_socket_t *socket) {
+	imq_close_socket_internal(socket, 0);
 }
 
 static int imq_socket_attach_endpoint(imq_socket_t *socket,

@@ -70,8 +70,6 @@ static void *imq_listener_io_thread(void *plistener) {
 	imq_socket_t *socket;
 	int fd;
 
-	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-
 	while ((fd = accept(listener->fd, NULL, NULL))) {
 		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 
@@ -80,7 +78,7 @@ static void *imq_listener_io_thread(void *plistener) {
 		if (socket == NULL) {
 			close(fd);
 
-			pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+			pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 
 			continue;
 		}
@@ -89,7 +87,7 @@ static void *imq_listener_io_thread(void *plistener) {
 
 		imq_disown_socket(socket);
 
-		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 	}
 
 	return NULL;
@@ -187,10 +185,10 @@ void imq_close_listener(imq_listener_t *listener) {
 	if (listener->fd != -1)
 		close(listener->fd);
 
-	pthread_mutex_lock(&(listener->mutex));
-	if (listener->has_iothread)
+	if (listener->has_iothread) {
 		pthread_cancel(listener->iothread);
-	pthread_mutex_unlock(&(listener->mutex));
+		pthread_join(listener->iothread, NULL);
+	}
 
 	for (i = 0; i < listener->endpointcount; i++) {
 		imq_free_endpoint(listener->endpoints[i]);

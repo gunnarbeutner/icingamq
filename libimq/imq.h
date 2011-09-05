@@ -25,6 +25,11 @@ typedef struct imq_endpoint_s {
 	pthread_rwlock_t rwlock;
 } imq_endpoint_t;
 
+typedef struct imq_user_s {
+	char *username;
+	char *password;
+} imq_user_t;
+
 struct imq_socket_s;
 
 typedef int (*imq_authn_checkpw_cb)(const char *username, const char *password);
@@ -43,6 +48,9 @@ typedef struct imq_listener_s {
 
 	imq_endpoint_t **endpoints;
 	int endpointcount;
+
+	imq_user_t **users;
+	int usercount;
 } imq_listener_t;
 
 typedef enum imq_socket_type_e {

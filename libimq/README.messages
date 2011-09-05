@@ -1,8 +1,13 @@
-IMQ_MSG_RESULT
-==============
+IMQ_MSG_ERROR
+=============
 
-IMQ_MSG_AUTH_CHALLENGE
-======================
+(currently unused)
+
+IMQ_MSG_AUTH
+============
+
+user: strin
+password: string
 
 IMQ_MSG_AUTH_RESPONSE
 =====================
@@ -19,7 +24,7 @@ IMQ_CLOSE_CIRCUIT
 
 circuitid: integer
 
-IMQ_DATA
+IMQ_DATA_CIRCUIT
 ========
 
 circuitid: integer
@@ -30,9 +35,16 @@ IMQ_ADV_USER
 ============
 
 username: string
-password (hash): string
+password: string
 
 IMQ_ADV_USER_COMMIT
 ===================
 
 (no fields)
+
+IMQ_ADV_ENDPOINT
+================
+
+channel: string
+instance: string
+zmqtype: int (ZMQ socket type)
