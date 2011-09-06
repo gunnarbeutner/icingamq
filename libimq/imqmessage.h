@@ -11,9 +11,14 @@ typedef enum imq_message_type_e {
 	IMQ_MSG_CLOSE_CIRCUIT,
 	IMQ_MSG_DATA_CIRCUIT,
 	IMQ_MSG_ADV_USER,
+	IMQ_MSG_ADV_USER_ALLOW,
 	IMQ_MSG_ADV_USER_COMMIT,
 	IMQ_MSG_ADV_ENDPOINT
 } imq_message_type_t;
+
+typedef struct imq_msg_error_s {
+	char *message;
+} imq_msg_error_t;
 
 typedef struct imq_msg_auth_s {
 	char *username;
@@ -36,6 +41,21 @@ typedef struct imq_msg_data_circuit_s {
 	void *data;
 } imq_msg_data_circuit_t;
 
+typedef struct imq_msg_adv_user_s {
+	char *username;
+	char *password;
+	uint16_t super;
+} imq_msg_adv_user_t;
+
+typedef struct imq_msg_adv_user_allow_s {
+	char *username;
+	char *channel;
+} imq_msg_adv_user_allow_t;
+
+typedef struct imq_msg_adv_user_commit_s {
+	uint16_t success;
+} imq_msg_adv_user_commit_t;
+
 typedef struct imq_msg_adv_endpoint_s {
 	char *channel;
 	char *instance;
@@ -46,11 +66,15 @@ typedef struct imq_msg_s {
 	imq_message_type_t type;
 
 	union {
+		imq_msg_error_t error;
 		imq_msg_auth_t auth;
 		imq_msg_open_circuit_t open_circuit;
 		imq_msg_close_circuit_t close_circuit;
 		imq_msg_data_circuit_t data_circuit;
 		imq_msg_adv_endpoint_t adv_endpoint;
+		imq_msg_adv_user_t adv_user;
+		imq_msg_adv_user_allow_t adv_user_allow;
+		imq_msg_adv_user_commit_t adv_user_commit;
 	} content;
 } imq_msg_t;
 

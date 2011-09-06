@@ -39,6 +39,7 @@ imq_endpoint_t *imq_alloc_endpoint(const char *channel, const char *instance) {
 	}
 
 	endpoint->listenerfd = -1;
+	endpoint->owns_path = 1;
 
 	return endpoint;
 }
@@ -58,7 +59,7 @@ void imq_free_endpoint(imq_endpoint_t *endpoint) {
 	if (endpoint->listenerfd != -1)
 		close(endpoint->listenerfd);
 
-	if (endpoint->path != NULL) {
+	if (endpoint->path != NULL && endpoint->owns_path) {
 		(void) unlink(endpoint->path);
 		free(endpoint->path);
 	}
@@ -253,6 +254,7 @@ imq_endpoint_t *imq_shallow_clone_endpoint(imq_endpoint_t *endpoint) {
 
 	clone_endpoint->listenerfd = -1;
 	clone_endpoint->zmqtype = endpoint->zmqtype;
+	clone_endpoint->owns_path = 0;
 
 	return clone_endpoint;
 }

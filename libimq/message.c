@@ -128,6 +128,30 @@ static int imq_msg_receive_open_circuit(imq_fifo_t *fifo,
 	return 0;
 }
 
+static int imq_msg_send_error(imq_fifo_t *fifo,
+    const imq_msg_error_t *msg) {
+	int rc;
+
+	rc = imq_msg_write_string(fifo, msg->message);
+
+	if (rc < 0)
+		return -1;
+
+	return 0;
+}
+
+static int imq_msg_receive_error(imq_fifo_t *fifo,
+    imq_msg_error_t *msg) {
+	int rc;
+
+	rc = imq_msg_read_string(fifo, &(msg->message));
+
+	if (rc < 0)
+		return -1;
+
+	return 0;
+}
+
 static int imq_msg_send_auth(imq_fifo_t *fifo,
     const imq_msg_auth_t *msg) {
 	int rc;
@@ -273,6 +297,108 @@ static int imq_msg_receive_adv_endpoint(imq_fifo_t *fifo,
 	return 0;
 }
 
+static int imq_msg_send_adv_user(imq_fifo_t *fifo,
+    const imq_msg_adv_user_t *msg) {
+	int rc;
+
+	rc = imq_msg_write_string(fifo, msg->username);
+
+	if (rc < 0)
+		return -1;
+
+	rc = imq_msg_write_string(fifo, msg->password);
+
+	if (rc < 0)
+		return -1;
+
+	rc = imq_msg_write_uint16(fifo, msg->super);
+
+	if (rc < 0)
+		return -1;
+
+	return 0;
+}
+
+static int imq_msg_receive_adv_user(imq_fifo_t *fifo,
+    imq_msg_adv_user_t *msg) {
+	int rc;
+
+	rc = imq_msg_read_string(fifo, &(msg->username));
+
+	if (rc < 0)
+		return -1;
+
+	rc = imq_msg_read_string(fifo, &(msg->password));
+
+	if (rc < 0)
+		return -1;
+
+	rc = imq_msg_read_uint16(fifo, &(msg->super));
+
+	if (rc < 0)
+		return -1;
+
+	return 0;
+}
+
+static int imq_msg_send_adv_user_allow(imq_fifo_t *fifo,
+    const imq_msg_adv_user_allow_t *msg) {
+	int rc;
+
+	rc = imq_msg_write_string(fifo, msg->username);
+
+	if (rc < 0)
+		return -1;
+
+	rc = imq_msg_write_string(fifo, msg->channel);
+
+	if (rc < 0)
+		return -1;
+
+	return 0;
+}
+
+static int imq_msg_receive_adv_user_allow(imq_fifo_t *fifo,
+    imq_msg_adv_user_allow_t *msg) {
+	int rc;
+
+	rc = imq_msg_read_string(fifo, &(msg->username));
+
+	if (rc < 0)
+		return -1;
+
+	rc = imq_msg_read_string(fifo, &(msg->channel));
+
+	if (rc < 0)
+		return -1;
+
+	return 0;
+}
+
+static int imq_msg_send_adv_user_commit(imq_fifo_t *fifo,
+    const imq_msg_adv_user_commit_t *msg) {
+	int rc;
+
+	rc = imq_msg_write_uint16(fifo, msg->success);
+
+	if (rc < 0)
+		return -1;
+
+	return 0;
+}
+
+static int imq_msg_receive_adv_user_commit(imq_fifo_t *fifo,
+    imq_msg_adv_user_commit_t *msg) {
+	int rc;
+
+	rc = imq_msg_read_uint16(fifo, &(msg->success));
+
+	if (rc < 0)
+		return -1;
+
+	return 0;
+}
+
 int imq_send_message(imq_fifo_t *fifo, const imq_msg_t *message) {
 	int rc;
 
@@ -282,6 +408,8 @@ int imq_send_message(imq_fifo_t *fifo, const imq_msg_t *message) {
 		return -1;
 
 	switch (message->type) {
+	case IMQ_MSG_ERROR:
+		return imq_msg_send_error(fifo, &(message->content.error));
 	case IMQ_MSG_AUTH:
 		return imq_msg_send_auth(fifo, &(message->content.auth));
 	case IMQ_MSG_OPEN_CIRCUIT:
@@ -296,6 +424,15 @@ int imq_send_message(imq_fifo_t *fifo, const imq_msg_t *message) {
 	case IMQ_MSG_ADV_ENDPOINT:
 		return imq_msg_send_adv_endpoint(fifo,
 		    &(message->content.adv_endpoint));
+	case IMQ_MSG_ADV_USER:
+		return imq_msg_send_adv_user(fifo,
+		    &(message->content.adv_user));
+	case IMQ_MSG_ADV_USER_ALLOW:
+		return imq_msg_send_adv_user_allow(fifo,
+		    &(message->content.adv_user_allow));
+	case IMQ_MSG_ADV_USER_COMMIT:
+		return imq_msg_send_adv_user_commit(fifo,
+		    &(message->content.adv_user_commit));
 	default:
 		return -1;
 	}
@@ -335,6 +472,10 @@ imq_msg_t *imq_receive_message(imq_fifo_t *fifo) {
 	message->type = type;
 
 	switch (message->type) {
+	case IMQ_MSG_ERROR:
+		rc = imq_msg_receive_error(clone_fifo,
+		    &(message->content.error));
+		break;
 	case IMQ_MSG_AUTH:
 		rc = imq_msg_receive_auth(clone_fifo, &(message->content.auth));
 		break;
@@ -353,6 +494,18 @@ imq_msg_t *imq_receive_message(imq_fifo_t *fifo) {
 	case IMQ_MSG_ADV_ENDPOINT:
 		rc = imq_msg_receive_adv_endpoint(clone_fifo,
 		    &(message->content.adv_endpoint));
+		break;
+	case IMQ_MSG_ADV_USER:
+		rc = imq_msg_receive_adv_user(clone_fifo,
+		    &(message->content.adv_user));
+		break;
+	case IMQ_MSG_ADV_USER_ALLOW:
+		rc = imq_msg_receive_adv_user_allow(clone_fifo,
+		    &(message->content.adv_user_allow));
+		break;
+	case IMQ_MSG_ADV_USER_COMMIT:
+		rc = imq_msg_receive_adv_user_commit(clone_fifo,
+		    &(message->content.adv_user_commit));
 		break;
 	default:
 		rc = -1;
@@ -391,7 +544,15 @@ void imq_free_message(imq_msg_t *message) {
 		free(message->content.data_circuit.data);
 		break;
 	case IMQ_MSG_ADV_USER:
+		free(message->content.adv_user.username);
+		free(message->content.adv_user.password);
+		break;
+	case IMQ_MSG_ADV_USER_ALLOW:
+		free(message->content.adv_user_allow.username);
+		free(message->content.adv_user_allow.channel);
+		break;
 	case IMQ_MSG_ADV_USER_COMMIT:
+		break;
 	case IMQ_MSG_ADV_ENDPOINT:
 		free(message->content.adv_endpoint.channel);
 		free(message->content.adv_endpoint.instance);

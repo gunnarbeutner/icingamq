@@ -10,9 +10,7 @@
 
 static int imq_start_listener_io(imq_listener_t *listener);
 
-imq_listener_t *imq_listener(unsigned short port,
-    imq_authn_checkpw_cb authn_checkpw_cb,
-    imq_authz_endpoint_cb authz_endpoint_cb) {
+imq_listener_t *imq_listener(unsigned short port) {
 	imq_listener_t *listener;
 	struct sockaddr_in sin;
 	int reuse = 1;
@@ -23,9 +21,6 @@ imq_listener_t *imq_listener(unsigned short port,
 		return NULL;
 
 	memset(listener, 0, sizeof (*listener));
-
-	listener->authn_checkpw_cb = authn_checkpw_cb;
-	listener->authz_endpoint_cb = authz_endpoint_cb;
 
 	listener->fd = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -190,13 +185,83 @@ void imq_close_listener(imq_listener_t *listener) {
 		pthread_join(listener->iothread, NULL);
 	}
 
+	imq_listener_clear_endpoints(listener);
+	imq_listener_clear_users(listener);
+
+	pthread_mutex_destroy(&(listener->mutex));
+
+	free(listener);
+}
+
+void imq_listener_clear_endpoints(imq_listener_t *listener) {
+	int i;
+
 	for (i = 0; i < listener->endpointcount; i++) {
 		imq_free_endpoint(listener->endpoints[i]);
 	}
 
 	free(listener->endpoints);
+	listener->endpoints = NULL;
+	listener->endpointcount = 0;
+}
 
-	pthread_mutex_destroy(&(listener->mutex));
+void imq_listener_clear_users(imq_listener_t *listener) {
+	int i;
 
-	free(listener);
+	for (i = 0; i < listener->usercount; i++) {
+		imq_free_user(listener->users[i]);
+	}
+
+	free(listener->users);
+	listener->users = NULL;
+	listener->usercount = 0;
+}
+
+int imq_listener_add_user(imq_listener_t *listener, imq_user_t *user) {
+	imq_user_t **new_users;
+
+	new_users = (imq_user_t **)realloc(listener->users,
+	    (listener->usercount + 1) * sizeof (imq_user_t *));
+
+	if (new_users == NULL)
+		return -1;
+
+	listener->users = new_users;
+	listener->usercount++;
+	listener->users[listener->usercount - 1] = user;
+
+	return 0;
+}
+
+int imq_listener_allow_user(imq_listener_t *listener, const char *username,
+    const char *channel) {
+	int i;
+	imq_user_t *user;
+
+	user = imq_listener_find_user(listener, username);
+
+	if (user == NULL)
+		return -1;
+
+	return imq_user_allow_channel(user, channel);
+}
+
+imq_user_t *imq_listener_find_user(imq_listener_t *listener,
+    const char *username) {
+	int i;
+	imq_user_t *user;
+
+	if (username == NULL)
+		return NULL;
+
+	for (i = 0; i < listener->usercount; i++) {
+		user = listener->users[i];
+
+		if (strcmp(user->username, username) != 0)
+			continue;
+
+		return user;
+	}
+
+	return NULL;
 }

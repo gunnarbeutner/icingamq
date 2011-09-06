@@ -41,7 +41,8 @@ OBJECTFILES= \
 	${OBJECTDIR}/log.o \
 	${OBJECTDIR}/message.o \
 	${OBJECTDIR}/fifo.o \
-	${OBJECTDIR}/listener.o
+	${OBJECTDIR}/listener.o \
+	${OBJECTDIR}/user.o
 
 
 # C Compiler Flags
@@ -107,6 +108,11 @@ ${OBJECTDIR}/listener.o: listener.c
 	${MKDIR} -p ${OBJECTDIR}
 	${RM} $@.d
 	$(COMPILE.c) -g -fPIC  -MMD -MP -MF $@.d -o ${OBJECTDIR}/listener.o listener.c
+
+${OBJECTDIR}/user.o: user.c 
+	${MKDIR} -p ${OBJECTDIR}
+	${RM} $@.d
+	$(COMPILE.c) -g -fPIC  -MMD -MP -MF $@.d -o ${OBJECTDIR}/user.o user.c
 
 # Subprojects
 .build-subprojects:

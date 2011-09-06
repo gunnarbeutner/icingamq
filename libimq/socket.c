@@ -103,51 +103,107 @@ static int imq_reconnect_socket(imq_socket_t *sock) {
 }
 
 static void imq_send_announcements(imq_socket_t *sock) {
-	int i;
+	int i, k;
 	imq_listener_t *listener;
+	imq_user_t *user;
 	imq_endpoint_t *endpoint;
 	imq_msg_t msg;
 
-	if (sock->type == IMQ_SERVER) {
-		listener = sock->listener;
+	if (sock->type != IMQ_SERVER)
+		return;
 
-		for (i = 0; i < listener->endpointcount; i++) {
-			endpoint = listener->endpoints[i];
+	listener = sock->listener;
 
-			if (listener->authz_endpoint_cb != NULL &&
-			    listener->authz_endpoint_cb(sock, endpoint) < 0)
-				continue;
+	assert(listener != NULL);
 
-			msg.type = IMQ_MSG_ADV_ENDPOINT;
-			msg.content.adv_endpoint.channel = endpoint->channel;
-			msg.content.adv_endpoint.instance = endpoint->instance;
-			msg.content.adv_endpoint.zmqtype = endpoint->zmqtype;
+	user = imq_listener_find_user(listener, sock->username);
+
+	if (user == NULL)
+		return;
+
+	for (i = 0; i < listener->endpointcount; i++) {
+		endpoint = listener->endpoints[i];
+
+		if (imq_user_authz_endpoint(user, endpoint) < 0)
+			continue;
+
+		msg.type = IMQ_MSG_ADV_ENDPOINT;
+		msg.content.adv_endpoint.channel = endpoint->channel;
+		msg.content.adv_endpoint.instance = endpoint->instance;
+		msg.content.adv_endpoint.zmqtype = endpoint->zmqtype;
+		imq_send_message(sock->sendq, &msg);
+	}
+
+	if (user->super) {
+		msg.type = IMQ_MSG_ADV_USER_COMMIT;
+		msg.content.adv_user_commit.success = 0;
+		imq_send_message(sock->sendq, &msg);
+
+		for (i = 0; i < listener->usercount; i++) {
+			user = listener->users[i];
+
+			msg.type = IMQ_MSG_ADV_USER;
+			msg.content.adv_user.username = user->username;
+			msg.content.adv_user.password = user->password;
 			imq_send_message(sock->sendq, &msg);
+
+			for (k = 0; k < user->channelcount; k++) {
+				msg.type = IMQ_MSG_ADV_USER_ALLOW;
+				msg.content.adv_user_allow.username =
+				    user->username;
+				msg.content.adv_user_allow.channel =
+				    user->channels[k];
+				imq_send_message(sock->sendq, &msg);
+			}
 		}
+
+		msg.type = IMQ_MSG_ADV_USER_COMMIT;
+		msg.content.adv_user_commit.success = 1;
+		imq_send_message(sock->sendq, &msg);
 	}
 }
 
-static void imq_process_auth(imq_socket_t *sock,
-    imq_msg_auth_t *auth) {
-	assert(sock->listener != NULL);
+static void imq_process_auth(imq_socket_t *sock, imq_msg_auth_t *auth) {
+	int i;
+	imq_listener_t *listener;
+	imq_user_t *user;
+	imq_msg_t msg;
+
+	listener = sock->listener;
+
+	assert(listener != NULL);
 
 	free(sock->username);
 	sock->username = NULL;
 
-	if (sock->listener->authn_checkpw_cb != NULL &&
-	    sock->listener->authn_checkpw_cb(auth->username, auth->password) <
-	    0) {
-		sock->shutdown = 1;
+	if (auth->username == NULL)
+		return;
+
+	for (i = 0; i < listener->usercount; i++) {
+		user = listener->users[i];
+
+		if (strcmp(user->username, auth->username) != 0)
+			continue;
+
+		if (user->password != NULL && (auth->password == NULL ||
+		    strcmp(user->password, auth->password) != 0))
+			continue;
+
+		sock->username = strdup(auth->username);
+
 		return;
 	}
 
-	if (auth->username != NULL)
-		sock->username = strdup(auth->username);
+	msg.type = IMQ_MSG_ERROR;
+	msg.content.error.message = strdup("Authentication error.");
+	imq_send_message(sock->sendq, &msg);
+	sock->shutdown = 1;
 }
 
 static void imq_process_open_circuit(imq_socket_t *sock,
     imq_msg_open_circuit_t *open_circuit) {
 	imq_endpoint_t *endpoint, *clone_endpoint;
+	imq_user_t *user;
 	imq_circuit_t *circuit;
 	imq_msg_t rejectmsg;
 
@@ -165,8 +221,15 @@ static void imq_process_open_circuit(imq_socket_t *sock,
 		return;
 	}
 
-	if (sock->listener->authz_endpoint_cb != NULL &&
-	    sock->listener->authz_endpoint_cb(sock, endpoint) < 0) {
+	user = imq_listener_find_user(sock->listener, sock->username);
+
+	if (user == NULL) {
+		imq_send_message(sock->sendq, &rejectmsg);
+
+		return;
+	}
+
+	if (imq_user_authz_endpoint(user, endpoint) < 0) {
 		imq_send_message(sock->sendq, &rejectmsg);
 
 		return;
@@ -270,6 +333,51 @@ static void imq_process_data_circuit(imq_socket_t *sock,
 	}
 }
 
+static void imq_process_adv_user(imq_socket_t *sock,
+    imq_msg_adv_user_t *adv_user) {
+	if (sock->adv_authn_cb == NULL)
+		return;
+
+	pthread_mutex_unlock(&(sock->mutex));
+	sock->adv_authn_cb(sock, sock->callback_cookie, IMQ_AUTHN_ADD,
+	    adv_user->username, adv_user->password, adv_user->super, NULL);
+	pthread_mutex_lock(&(sock->mutex));
+}
+
+static void imq_process_adv_user_allow(imq_socket_t *sock,
+    imq_msg_adv_user_allow_t *adv_user_allow) {
+	if (sock->adv_authn_cb == NULL)
+		return;
+
+	pthread_mutex_unlock(&(sock->mutex));
+	sock->adv_authn_cb(sock, sock->callback_cookie, IMQ_AUTHN_ADD,
+	    adv_user_allow->username, NULL, 0, adv_user_allow->channel);
+	pthread_mutex_lock(&(sock->mutex));
+}
+
+static void imq_process_adv_user_commit(imq_socket_t *sock,
+    imq_msg_adv_user_commit_t *adv_user_commit) {
+	if (sock->adv_authn_cb == NULL)
+		return;
+
+	pthread_mutex_unlock(&(sock->mutex));
+	sock->adv_authn_cb(sock, sock->callback_cookie,
+	    adv_user_commit->success ? IMQ_AUTHN_COMMIT : IMQ_AUTHN_ROLLBACK,
+	    NULL, NULL, 0, NULL);
+	pthread_mutex_lock(&(sock->mutex));
+}
+
+static void imq_process_adv_endpoint(imq_socket_t *sock,
+    imq_msg_adv_endpoint_t *adv_endpoint) {
+	if (sock->adv_endpoint_cb == NULL)
+		return;
+
+	pthread_mutex_unlock(&(sock->mutex));
+	sock->adv_endpoint_cb(sock, sock->callback_cookie,adv_endpoint->channel,
+	    adv_endpoint->instance, adv_endpoint->zmqtype);
+	pthread_mutex_lock(&(sock->mutex));
+}
+
 static void imq_process_message(imq_socket_t *sock, imq_msg_t *msg) {
 	imq_log("Received msg: %d\n", msg->type);
 
@@ -287,7 +395,20 @@ static void imq_process_message(imq_socket_t *sock, imq_msg_t *msg) {
 	if (sock->type == IMQ_CLIENT) {
 		switch (msg->type) {
 		case IMQ_MSG_ADV_USER:
+			imq_process_adv_user(sock, &(msg->content.adv_user));
+			break;
+		case IMQ_MSG_ADV_USER_ALLOW:
+			imq_process_adv_user_allow(sock,
+			    &(msg->content.adv_user_allow));
+			break;
 		case IMQ_MSG_ADV_USER_COMMIT:
+			imq_process_adv_user_commit(sock,
+			    &(msg->content.adv_user_commit));
+			break;
+		case IMQ_MSG_ADV_ENDPOINT:
+			imq_process_adv_endpoint(sock,
+			    &(msg->content.adv_endpoint));
+			break;
 		default:
 			break;
 		}
@@ -609,6 +730,16 @@ imq_socket_t *imq_connect(const char *host, unsigned short port,
 	}
 
 	return socket;
+}
+
+void imq_socket_set_callbacks(imq_socket_t *sock,
+    imq_adv_authn_cb_t adv_authn_cb, imq_adv_endpoint_cb_t adv_endpoint_cb,
+    void *cookie) {
+	pthread_mutex_lock(&(sock->mutex));
+	sock->adv_authn_cb = adv_authn_cb;
+	sock->adv_endpoint_cb = adv_endpoint_cb;
+	sock->callback_cookie = cookie;
+	pthread_mutex_unlock(&(sock->mutex));
 }
 
 void imq_disown_socket(imq_socket_t *socket) {

@@ -23,6 +23,7 @@
       <itemPath>log.c</itemPath>
       <itemPath>message.c</itemPath>
       <itemPath>socket.c</itemPath>
+      <itemPath>user.c</itemPath>
     </logicalFolder>
     <logicalFolder name="TestFiles"
                    displayName="Test Files"
